@@ -1,7 +1,7 @@
 use crate::{
     config::Config,
-    de::{read::Reader, BorrowDecode, BorrowDecoder, Decode, Decoder, DecoderImpl},
-    enc::{write::Writer, Encode, Encoder, EncoderImpl},
+    de::{BorrowDecode, BorrowDecoder, Decode, Decoder, DecoderImpl, read::Reader},
+    enc::{Encode, Encoder, EncoderImpl, write::Writer},
     error::{DecodeError, EncodeError},
     impl_borrow_decode,
 };
@@ -10,6 +10,7 @@ use std::{
     collections::{HashMap, HashSet},
     ffi::{CStr, CString},
     hash::Hash,
+    io,
     io::Read,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
     path::{Path, PathBuf},
@@ -51,11 +52,16 @@ pub fn decode_from_std_read_with_context<
     D::decode(&mut decoder)
 }
 
-pub(crate) struct IoReader<R> {
+/// A wrapper around [`std::io::Read`] that implements [`Reader`].
+///
+/// You should consider to use a [`std::io::BufReader`] instead as decoding typically performs many
+/// short reads.
+pub struct IoReader<R> {
     reader: R,
 }
 
 impl<R> IoReader<R> {
+    /// Construct an [`IoReader`] from a [`std::io::Read`].
     pub const fn new(reader: R) -> Self {
         Self { reader }
     }
@@ -115,25 +121,39 @@ pub fn encode_into_std_write<E: Encode, C: Config, W: std::io::Write>(
     Ok(encoder.into_writer().bytes_written())
 }
 
-pub(crate) struct IoWriter<'a, W: std::io::Write> {
-    writer: &'a mut W,
+/// A wrapper around a [`std::io::Write`] that implements [`Writer`].
+///
+/// You should consider to use a [`std::io::BufWriter`] as encoding typically performs many short
+/// writes.
+pub struct IoWriter<W> {
+    writer: W,
     bytes_written: usize,
 }
 
-impl<'a, W: std::io::Write> IoWriter<'a, W> {
-    pub fn new(writer: &'a mut W) -> Self {
+impl<W> IoWriter<W> {
+    /// Create a new [`IoWriter`].
+    pub fn new(writer: W) -> Self {
         Self {
             writer,
             bytes_written: 0,
         }
     }
 
-    pub const fn bytes_written(&self) -> usize {
+    pub(crate) const fn bytes_written(&self) -> usize {
         self.bytes_written
     }
 }
 
-impl<W: std::io::Write> Writer for IoWriter<'_, W> {
+impl<W: std::io::Write> IoWriter<W> {
+    /// Perform a flush on the stream.
+    ///
+    /// This is important to remember, especially if you are using a buffering writer.
+    pub fn flush(&mut self) -> io::Result<()> {
+        self.writer.flush()
+    }
+}
+
+impl<W: std::io::Write> Writer for IoWriter<W> {
     #[inline(always)]
     fn write(&mut self, bytes: &[u8]) -> Result<(), EncodeError> {
         self.writer
