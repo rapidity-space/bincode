@@ -218,6 +218,20 @@ pub fn decode_from_reader<D: de::Decode<()>, R: Reader, C: Config>(
     D::decode(&mut decoder)
 }
 
+/// Attempt to decode a given type `D` from the given [Reader] with context.
+///
+/// See the [config] module for more information on configurations.
+///
+/// [config]: config/index.html
+pub fn decode_from_reader_with_context<Context, D: de::Decode<Context>, R: Reader, C: Config>(
+    reader: R,
+    config: C,
+    context: Context,
+) -> Result<D, error::DecodeError> {
+    let mut decoder = de::DecoderImpl::<_, C, Context>::new(reader, config, context);
+    D::decode(&mut decoder)
+}
+
 // TODO: Currently our doctests fail when trying to include the specs because the specs depend on `derive` and `alloc`.
 // But we want to have the specs in the docs always
 #[cfg(all(feature = "alloc", feature = "derive", doc))]
